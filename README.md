@@ -101,7 +101,7 @@ observations are heavily autocorrelated and iid standard errors would overstate 
 - Collector live since 15 Sept 2026, running unattended
 - Config-driven pairs (`pairs.json`) — markets can be added without touching code
 - Fee model for both venues implemented and validated against two live examples
-- ~9,400 quote rows as of 16 Sept
+- ~48,000 quote rows as of 17 Sept
 
 **Next:** expand from 2 matched pairs to 15–20; pull resolution rules from both APIs
 (`rules_primary` on Kalshi, `description` on Polymarket) and classify each pair; build the
