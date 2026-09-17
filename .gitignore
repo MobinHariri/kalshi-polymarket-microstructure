@@ -1,0 +1,20 @@
+# Collected data — generated locally, not source
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
