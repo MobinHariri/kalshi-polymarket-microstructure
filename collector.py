@@ -1,12 +1,29 @@
-import json, sqlite3, time, requests
+import ctypes, json, sqlite3, sys, time, requests
 from datetime import datetime, timezone
 
 POLL_SECONDS = 20
 DEPTH_EVERY  = 3      # capture full book depth every Nth cycle (~60s)
-DEPTH_LEVELS = 10     # how many levels per side to store
+DEPTH_LEVELS = 10     # levels per side to store
 DB = "crossvenue.db"
 HEADERS = {"User-Agent": "crossvenue-research/0.1"}
 KALSHI = "https://external-api.kalshi.com/trade-api/v2"
+
+# Tell Windows not to idle-sleep while this process runs (what media players do).
+# It cannot override closing the lid or a forced Windows Update restart.
+if sys.platform == "win32":
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    print("sleep prevention on")
+
+def get_json(url, params=None, tries=2):
+    """GET with one retry after a short pause — most failures are transient SSL drops."""
+    for attempt in range(tries):
+        try:
+            return requests.get(url, params=params, timeout=10, headers=HEADERS).json()
+        except Exception:
+            if attempt == tries - 1:
+                raise
+            time.sleep(1)
 
 with open("pairs.json") as f:
     PAIRS = json.load(f)
@@ -31,20 +48,15 @@ def now_iso():
 
 def kalshi_yes_book(ticker):
     """Both sides on the YES price scale, best first: ([(price,size)], [(price,size)])."""
-    r = requests.get(f"{KALSHI}/markets/{ticker}/orderbook",
-                     timeout=15, headers=HEADERS).json()
-    ob  = r.get("orderbook_fp") or {}
+    ob  = get_json(f"{KALSHI}/markets/{ticker}/orderbook").get("orderbook_fp") or {}
     yes = ob.get("yes_dollars") or []
     no  = ob.get("no_dollars")  or []
-    # arrays are ascending, so reversing puts the best price first
-    bids = [(p, s) for p, s in reversed(yes)]
-    # a NO bid at p is a YES ask at 1-p; highest NO bid = lowest YES ask
-    asks = [(f"{1 - float(p):.4f}", s) for p, s in reversed(no)]
+    bids = [(p, s) for p, s in reversed(yes)]                       # ascending -> best first
+    asks = [(f"{1 - float(p):.4f}", s) for p, s in reversed(no)]    # NO bid p = YES ask 1-p
     return bids, asks
 
 def poly_book(token):
-    bk = requests.get("https://clob.polymarket.com/book",
-                      params={"token_id": token}, timeout=15, headers=HEADERS).json()
+    bk = get_json("https://clob.polymarket.com/book", params={"token_id": token})
     bids = sorted(bk.get("bids", []), key=lambda x: float(x["price"]), reverse=True)
     asks = sorted(bk.get("asks", []), key=lambda x: float(x["price"]))
     return ([(b["price"], b["size"]) for b in bids],
@@ -57,8 +69,7 @@ def poll_once(capture_depth):
 
     # --- Kalshi top of book: one request covering every pair ---
     try:
-        url = f"{KALSHI}/markets?tickers=" + ",".join(by_kalshi.keys())
-        for m in requests.get(url, timeout=15, headers=HEADERS).json()["markets"]:
+        for m in get_json(f"{KALSHI}/markets?tickers=" + ",".join(by_kalshi.keys()))["markets"]:
             pid = by_kalshi.get(m["ticker"])
             if pid:
                 qrows.append((ts, "kalshi", pid, m["yes_bid_dollars"], m["yes_ask_dollars"],
